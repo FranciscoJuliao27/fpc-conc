@@ -5,6 +5,36 @@ import java.io.FileReader;
 
 public class DnaConcurrentMain {
 
+    private static synchronized void adicionaTotal(long val) {
+        total += val;
+    }
+
+    private static long total = 0;
+    
+    static class FileWorker implements Runnable {
+        private final File file;
+        private final String padrao;
+        private IOException erro;
+
+        FileWorker(File file, String padrao) {
+            this.file = file;
+            this.padrao = padrao;
+        }
+
+        @Override
+        public void run() {
+            try {
+             adicionaTotal(countInFile(file, padrao));
+            } catch (IOException e) {
+                erro = e;
+            }
+        }
+
+        IOException getError() {
+            return erro;
+        }
+    }
+
     public static void main(String[] args) {
         if (args.length < 2) {
             System.err.println("Uso: java DnaConcurrentMain DIRETORIO_ARQUIVOS PADRAO");
@@ -13,11 +43,11 @@ public class DnaConcurrentMain {
         }
 
         String dirName = args[0];
-        String pattern = args[1];
+        String padrao = args[1];
 
         File dir = new File(dirName);
         if (!dir.isDirectory()) {
-            System.err.println("Caminho não é um diretório: " + dirName);
+            System.err.println("Caminho não é dir: " + dirName);
             System.exit(2);
         }
 
@@ -27,59 +57,71 @@ public class DnaConcurrentMain {
             System.exit(3);
         }
 
-        try {
-            long total = 0;
-            
-	    for (File f : files) {
-                total += countInFile(f, pattern);
-            }
+        FileWorker[] workers = new FileWorker[files.length];
+        Thread[] threads = new Thread[files.length];
 
-	    System.out.println("Sequência " + pattern + " foi encontrada " + total + " vezes.");
-        } catch (IOException e) {
-            System.err.println("Erro ao ler arquivos: " + e.getMessage());
-            System.exit(4);
+        for (int i = 0; i < files.length; i++) {
+            workers[i] = new FileWorker(files[i], padrao);
+            threads[i] = new Thread(workers[i]);
+            threads[i].start();
         }
+
+        try {
+            for (Thread t : threads) {
+                t.join();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("Execução interrompida");
+            System.exit(5);
+        }
+
+        for (FileWorker w : workers) {
+            if (w.getError() != null) {
+                System.err.println("Erro ao ler:" + w.getError().getMessage());
+                System.exit(4);
+            }
+        }
+
+        System.out.println("Sequencia " + padrao + " foi encontrada " + total + " de vezes");
     }
 
-
-    public static long countInFile(File file, String pattern) throws IOException {
+    public static long countInFile(File file, String padrao) throws IOException {
         long total = 0;
         try (BufferedReader br = new BufferedReader(new FileReader(file))) {
             String line;
             while ((line = br.readLine()) != null) {
                 line = line.trim();
-                
-		// simulando delay de processamento
-		try {
-             	   Thread.sleep(10);
-           	} catch (InterruptedException e) {
-                   Thread.currentThread().interrupt();
+
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
 
-		if (!line.isEmpty()) {
-                    total += countInSequence(line, pattern);
+                if (!line.isEmpty()) {
+                    total += countInSequence(line, padrao);
                 }
             }
         }
-        return total;    
+        return total;
     }
 
-    public static long countInSequence(String sequence, String pattern) {
-        if (sequence == null || pattern == null) {
+    public static long countInSequence(String sequence, String padrao) {
+        if (sequence == null || padrao == null) {
             return 0;
         }
         int n = sequence.length();
-        int m = pattern.length();
+        int m = padrao.length();
         if (m == 0 || n < m) {
             return 0;
         }
         long count = 0;
         for (int i = 0; i <= n - m; i++) {
-            if (sequence.regionMatches(false, i, pattern, 0, m)) {
+            if (sequence.regionMatches(false, i, padrao, 0, m)) {
                 count++;
             }
         }
         return count;
     }
-
 }
